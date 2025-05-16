@@ -4,7 +4,6 @@ const fs = require('fs');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const randomUseragent = require('random-useragent');
 const axios = require('axios');
-t
 const colors = {
   reset: '\x1b[0m',
   cyan: '\x1b[36m',
