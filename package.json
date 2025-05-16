@@ -1,0 +1,33 @@
+{
+  "name": "pharos-auto-bot",
+  "version": "1.0.0",
+  "description": "Automated bot for interacting with Pharos Testnet",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vikitoshi/Pharos-Auto-Bot.git"
+  },
+  "keywords": [
+    "pharos",
+    "testnet",
+    "bot",
+    "automation",
+    "airdrop"
+  ],
+  "author": "vikitoshi",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.7",
+    "dotenv": "^16.4.1",
+    "ethers": "^6.11.1",
+    "https-proxy-agent": "^7.0.2",
+    "random-useragent": "^0.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
