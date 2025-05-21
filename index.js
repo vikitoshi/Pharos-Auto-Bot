@@ -22,6 +22,7 @@ const logger = {
   success: (msg) => console.log(`${colors.green}[+] ${msg}${colors.reset}`),
   loading: (msg) => console.log(`${colors.cyan}[⟳] ${msg}${colors.reset}`),
   step: (msg) => console.log(`${colors.white}[➤] ${msg}${colors.reset}`),
+  user: (msg) => console.log(`\n${colors.white}[➤] ${msg}${colors.reset}`),
   banner: () => {
     console.log(`${colors.cyan}${colors.bold}`);
     console.log('-------------------------------------------------');
@@ -205,7 +206,7 @@ const checkBalanceAndApproval = async (wallet, tokenAddress, amount, decimals, s
 
 const getUserInfo = async (wallet, proxy = null, jwt) => {
   try {
-    logger.step(`Fetching user info for wallet: ${wallet.address}`);
+    logger.user(`Fetching user info for wallet: ${wallet.address}`);
     const profileUrl = `https://api.pharosnetwork.xyz/user/profile?address=${wallet.address}`;
     const headers = {
       accept: "application/json, text/plain, */*",
@@ -603,7 +604,7 @@ const addLiquidity = async (wallet, provider, index) => {
     const amount0 = pair.amount0;
     const amount1 = pair.amount1;
     logger.step(
-      `Preparing liquidity addition ${index + 1}: ${pair.token0}/${pair.token1} (${amount0} ${pair.token0}, ${amount1} ${pair.token1})`
+      `Preparing Liquidity Add ${index + 1}: ${pair.token0}/${pair.token1} (${amount0} ${pair.token0}, ${amount1} ${pair.token1})`
     );
 
     const decimals0 = tokenDecimals[pair.token0];
@@ -656,12 +657,12 @@ const addLiquidity = async (wallet, provider, index) => {
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || undefined,
     });
 
-    logger.loading(`Liquidity addition ${index + 1} sent, waiting for confirmation...`);
+    logger.loading(`Liquidity Add ${index + 1} sent, waiting for confirmation...`);
     const receipt = await tx.wait();
-    logger.success(`Liquidity addition ${index + 1} completed: ${receipt.hash}`);
+    logger.success(`Liquidity Add ${index + 1} completed: ${receipt.hash}`);
     logger.step(`Explorer: https://testnet.pharosscan.xyz/tx/${receipt.hash}`);
   } catch (error) {
-    logger.error(`Liquidity addition ${index + 1} failed: ${error.message}`);
+    logger.error(`Liquidity Add ${index + 1} failed: ${error.message}`);
     if (error.transaction) {
       logger.error(`Transaction details: ${JSON.stringify(error.transaction, null, 2)}`);
     }
