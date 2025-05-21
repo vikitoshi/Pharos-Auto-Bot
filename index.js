@@ -42,6 +42,12 @@ const tokens = {
   USDC: '0xad902cf99c2de2f1ba5ec4d642fd7e49cae9ee37',
   WPHRS: '0x76aaada469d23216be5f7c596fa25f282ff9b364',
   USDT: '0xed59de2d7ad9c043442e381231ee3646fc3c2939',
+  POSITION_MANAGER: '0xF8a1D4FF0f9b9Af7CE58E1fc1833688F3BFd6115',
+};
+
+const poolAddresses = {
+  USDC_WPHRS: '0x0373a059321219745aee4fad8a942cf088be3d0e',
+  USDT_WPHRS: '0x70118b6eec45329e0534d849bc3e588bb6752527',
 };
 
 const contractAddress = '0x1a4de519154ae51200b0ad7c90f7fac75547888a';
@@ -74,13 +80,52 @@ const erc20Abi = [
   'function withdraw(uint256 wad) public',
 ];
 
+const positionManagerAbi = [
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: 'address', name: 'token0', type: 'address' },
+          { internalType: 'address', name: 'token1', type: 'address' },
+          { internalType: 'uint24', name: 'fee', type: 'uint24' },
+          { internalType: 'int24', name: 'tickLower', type: 'int24' },
+          { internalType: 'int24', name: 'tickUpper', type: 'int24' },
+          { internalType: 'uint256', name: 'amount0Desired', type: 'uint256' },
+          { internalType: 'uint256', name: 'amount1Desired', type: 'uint256' },
+          { internalType: 'uint256', name: 'amount0Min', type: 'uint256' },
+          { internalType: 'uint256', name: 'amount1Min', type: 'uint256' },
+          { internalType: 'address', name: 'recipient', type: 'address' },
+          { internalType: 'uint256', name: 'deadline', type: 'uint256' },
+        ],
+        internalType: 'struct INonfungiblePositionManager.MintParams',
+        name: 'params',
+        type: 'tuple',
+      },
+    ],
+    name: 'mint',
+    outputs: [
+      { internalType: 'uint256', name: 'tokenId', type: 'uint256' },
+      { internalType: 'uint128', name: 'liquidity', type: 'uint128' },
+      { internalType: 'uint256', name: 'amount0', type: 'uint256' },
+      { internalType: 'uint256', name: 'amount1', type: 'uint256' },
+    ],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+];
+
 const pairOptions = [
   { id: 1, from: 'WPHRS', to: 'USDC', amount: 0.01 },
   { id: 2, from: 'WPHRS', to: 'USDT', amount: 0.01 },
   { id: 3, from: 'USDC', to: 'WPHRS', amount: 0.01 },
-  { id: 4, from: 'USDT', to: 'WPHRS', amount: 0.01},
+  { id: 4, from: 'USDT', to: 'WPHRS', amount: 0.01 },
   { id: 5, from: 'USDC', to: 'USDT', amount: 0.01 },
   { id: 6, from: 'USDT', to: 'USDC', amount: 0.01 },
+];
+
+const lpOptions = [
+  { id: 1, token0: 'WPHRS', token1: 'USDC', amount0: 0.01, amount1: 0.01, fee: 3000 },
+  { id: 2, token0: 'WPHRS', token1: 'USDT', amount0: 0.01, amount1: 0.01, fee: 3000 },
 ];
 
 const loadProxies = () => {
@@ -140,7 +185,7 @@ const checkBalanceAndApproval = async (wallet, tokenAddress, amount, decimals, s
       logger.step(`Approving ${amount} tokens for ${spender}...`);
       const estimatedGas = await tokenContract.approve.estimateGas(spender, ethers.MaxUint256);
       const feeData = await wallet.provider.getFeeData();
-      const gasPrice = feeData.gasPrice || ethers.parseUnits('1', 'gwei'); 
+      const gasPrice = feeData.gasPrice || ethers.parseUnits('1', 'gwei');
       const approveTx = await tokenContract.approve(spender, ethers.MaxUint256, {
         gasLimit: Math.ceil(Number(estimatedGas) * 1.2),
         gasPrice,
@@ -158,6 +203,51 @@ const checkBalanceAndApproval = async (wallet, tokenAddress, amount, decimals, s
   }
 };
 
+const getUserInfo = async (wallet, proxy = null, jwt) => {
+  try {
+    logger.step(`Fetching user info for wallet: ${wallet.address}`);
+    const profileUrl = `https://api.pharosnetwork.xyz/user/profile?address=${wallet.address}`;
+    const headers = {
+      accept: "application/json, text/plain, */*",
+      "accept-language": "en-US,en;q=0.8",
+      authorization: `Bearer ${jwt}`,
+      "sec-ch-ua": '"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Windows"',
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-site": "same-site",
+      "sec-gpc": "1",
+      Referer: "https://testnet.pharosnetwork.xyz/",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "User-Agent": randomUseragent.getRandom(),
+    };
+
+    const axiosConfig = {
+      method: 'get',
+      url: profileUrl,
+      headers,
+      httpsAgent: proxy ? new HttpsProxyAgent(proxy) : null,
+    };
+
+    logger.loading('Fetching user profile...');
+    const response = await axios(axiosConfig);
+    const data = response.data;
+
+    if (data.code !== 0 || !data.data.user_info) {
+      logger.error(`Failed to fetch user info: ${data.msg || 'Unknown error'}`);
+      return;
+    }
+
+    const userInfo = data.data.user_info;
+    logger.info(`User ID: ${userInfo.ID}`);
+    logger.info(`Task Points: ${userInfo.TaskPoints}`);
+    logger.info(`Total Points: ${userInfo.TotalPoints}`);
+  } catch (error) {
+    logger.error(`Failed to fetch user info: ${error.message}`);
+  }
+};
+
 const getMulticallData = (pair, amount, walletAddress) => {
   try {
     const decimals = tokenDecimals[pair.from];
@@ -168,11 +258,11 @@ const getMulticallData = (pair, amount, walletAddress) => {
       [
         tokens[pair.from],
         tokens[pair.to],
-        500, 
+        500,
         walletAddress,
         scaledAmount,
-        0, 
-        0, 
+        0,
+        0,
       ]
     );
 
@@ -218,7 +308,7 @@ const performSwap = async (wallet, provider, index) => {
       return;
     }
 
-    const deadline = Math.floor(Date.now() / 1000) + 300; 
+    const deadline = Math.floor(Date.now() / 1000) + 300;
     let estimatedGas;
     try {
       estimatedGas = await contract.multicall.estimateGas(deadline, multicallData, {
@@ -230,7 +320,7 @@ const performSwap = async (wallet, provider, index) => {
     }
 
     const feeData = await provider.getFeeData();
-    const gasPrice = feeData.gasPrice || ethers.parseUnits('1', 'gwei'); 
+    const gasPrice = feeData.gasPrice || ethers.parseUnits('1', 'gwei');
     const tx = await contract.multicall(deadline, multicallData, {
       gasLimit: Math.ceil(Number(estimatedGas) * 1.2),
       gasPrice,
@@ -285,6 +375,54 @@ const transferPHRS = async (wallet, provider, index) => {
     logger.step(`Explorer: https://testnet.pharosscan.xyz/tx/${receipt.hash}`);
   } catch (error) {
     logger.error(`Transfer ${index + 1} failed: ${error.message}`);
+    if (error.transaction) {
+      logger.error(`Transaction details: ${JSON.stringify(error.transaction, null, 2)}`);
+    }
+    if (error.receipt) {
+      logger.error(`Receipt: ${JSON.stringify(error.receipt, null, 2)}`);
+    }
+  }
+};
+
+const wrapPHRS = async (wallet, provider, index) => {
+  try {
+    const minAmount = 0.000001;
+    const maxAmount = 0.00001;
+    const amount = minAmount + Math.random() * (maxAmount - minAmount);
+    const amountWei = ethers.parseEther(amount.toFixed(6).toString());
+    logger.step(`Preparing wrap PHRS ${index + 1}: ${amount.toFixed(6)} PHRS to WPHRS`);
+
+    const balance = await provider.getBalance(wallet.address);
+    if (balance < amountWei) {
+      logger.warn(`Skipping wrap ${index + 1}: Insufficient PHRS balance: ${ethers.formatEther(balance)} < ${amount.toFixed(6)}`);
+      return;
+    }
+
+    const wphrsContract = new ethers.Contract(tokens.WPHRS, erc20Abi, wallet);
+    let estimatedGas;
+    try {
+      estimatedGas = await wphrsContract.deposit.estimateGas({ value: amountWei });
+    } catch (error) {
+      logger.error(`Gas estimation failed for wrap ${index + 1}: ${error.message}`);
+      return;
+    }
+
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || ethers.parseUnits('1', 'gwei');
+    const tx = await wphrsContract.deposit({
+      value: amountWei,
+      gasLimit: Math.ceil(Number(estimatedGas) * 1.2),
+      gasPrice,
+      maxFeePerGas: feeData.maxFeePerGas || undefined,
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || undefined,
+    });
+
+    logger.loading(`Wrap transaction ${index + 1} sent, waiting for confirmation...`);
+    const receipt = await tx.wait();
+    logger.success(`Wrap ${index + 1} completed: ${receipt.hash}`);
+    logger.step(`Explorer: https://testnet.pharosscan.xyz/tx/${receipt.hash}`);
+  } catch (error) {
+    logger.error(`Wrap ${index + 1} failed: ${error.message}`);
     if (error.transaction) {
       logger.error(`Transaction details: ${JSON.stringify(error.transaction, null, 2)}`);
     }
@@ -425,7 +563,7 @@ const performCheckIn = async (wallet, proxy = null) => {
 
     if (loginData.code !== 0 || !loginData.data.jwt) {
       logger.error(`Login failed: ${loginData.msg || 'Unknown error'}`);
-      return false;
+      return null;
     }
 
     const jwt = loginData.data.jwt;
@@ -448,14 +586,88 @@ const performCheckIn = async (wallet, proxy = null) => {
 
     if (checkInData.code === 0) {
       logger.success(`Check-in successful for ${wallet.address}`);
-      return true;
+      return jwt;
     } else {
       logger.warn(`Check-in failed, possibly already checked in: ${checkInData.msg || 'Unknown error'}`);
-      return false;
+      return jwt;
     }
   } catch (error) {
     logger.error(`Check-in failed for ${wallet.address}: ${error.message}`);
-    return false;
+    return null;
+  }
+};
+
+const addLiquidity = async (wallet, provider, index) => {
+  try {
+    const pair = lpOptions[Math.floor(Math.random() * lpOptions.length)];
+    const amount0 = pair.amount0;
+    const amount1 = pair.amount1;
+    logger.step(
+      `Preparing liquidity addition ${index + 1}: ${pair.token0}/${pair.token1} (${amount0} ${pair.token0}, ${amount1} ${pair.token1})`
+    );
+
+    const decimals0 = tokenDecimals[pair.token0];
+    const amount0Wei = ethers.parseUnits(amount0.toString(), decimals0);
+    if (!(await checkBalanceAndApproval(wallet, tokens[pair.token0], amount0, decimals0, tokens.POSITION_MANAGER))) {
+      return;
+    }
+
+    const decimals1 = tokenDecimals[pair.token1];
+    const amount1Wei = ethers.parseUnits(amount1.toString(), decimals1);
+    if (!(await checkBalanceAndApproval(wallet, tokens[pair.token1], amount1, decimals1, tokens.POSITION_MANAGER))) {
+      return;
+    }
+
+    const positionManager = new ethers.Contract(tokens.POSITION_MANAGER, positionManagerAbi, wallet);
+
+    const deadline = Math.floor(Date.now() / 1000) + 600; 
+    const tickLower = -60000; 
+    const tickUpper = 60000;
+
+    const mintParams = {
+      token0: tokens[pair.token0],
+      token1: tokens[pair.token1],
+      fee: pair.fee,
+      tickLower,
+      tickUpper,
+      amount0Desired: amount0Wei,
+      amount1Desired: amount1Wei,
+      amount0Min: 0,
+      amount1Min: 0,
+      recipient: wallet.address,
+      deadline,
+    };
+
+    let estimatedGas;
+    try {
+      estimatedGas = await positionManager.mint.estimateGas(mintParams, { from: wallet.address });
+    } catch (error) {
+      logger.error(`Gas estimation failed for LP ${index + 1}: ${error.message}`);
+      return;
+    }
+
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || ethers.parseUnits('1', 'gwei');
+
+    const tx = await positionManager.mint(mintParams, {
+      gasLimit: Math.ceil(Number(estimatedGas) * 1.2),
+      gasPrice,
+      maxFeePerGas: feeData.maxFeePerGas || undefined,
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || undefined,
+    });
+
+    logger.loading(`Liquidity addition ${index + 1} sent, waiting for confirmation...`);
+    const receipt = await tx.wait();
+    logger.success(`Liquidity addition ${index + 1} completed: ${receipt.hash}`);
+    logger.step(`Explorer: https://testnet.pharosscan.xyz/tx/${receipt.hash}`);
+  } catch (error) {
+    logger.error(`Liquidity addition ${index + 1} failed: ${error.message}`);
+    if (error.transaction) {
+      logger.error(`Transaction details: ${JSON.stringify(error.transaction, null, 2)}`);
+    }
+    if (error.receipt) {
+      logger.error(`Receipt: ${JSON.stringify(error.receipt, null, 2)}`);
+    }
   }
 };
 
@@ -482,6 +694,11 @@ const main = async () => {
     return;
   }
 
+  const numTransfers = 10; 
+  const numWraps = 10; 
+  const numSwaps = 10; 
+  const numLPs = 2; 
+
   while (true) {
     for (const privateKey of privateKeys) {
       const proxy = proxies.length ? getRandomProxy(proxies) : null;
@@ -492,15 +709,42 @@ const main = async () => {
 
       await claimFaucet(wallet, proxy);
 
-      await performCheckIn(wallet, proxy);
+      const jwt = await performCheckIn(wallet, proxy);
+      if (jwt) {
+        await getUserInfo(wallet, proxy, jwt);
+      } else {
+        logger.error('Skipping user info fetch due to failed check-in');
+      }
 
-      for (let i = 0; i < 10; i++) {
+      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`${colors.cyan}TRANSFERS${colors.reset}`);
+      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      for (let i = 0; i < numTransfers; i++) {
         await transferPHRS(wallet, provider, i);
         await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
       }
 
-      for (let i = 0; i < 10; i++) {
+      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`${colors.cyan}WRAP${colors.reset}`);
+      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      for (let i = 0; i < numWraps; i++) {
+        await wrapPHRS(wallet, provider, i);
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+      }
+
+      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`${colors.cyan}SWAP${colors.reset}`);
+      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      for (let i = 0; i < numSwaps; i++) {
         await performSwap(wallet, provider, i);
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+      }
+
+      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`${colors.cyan}ADD LP${colors.reset}`);
+      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      for (let i = 0; i < numLPs; i++) {
+        await addLiquidity(wallet, provider, i);
         await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
       }
     }
