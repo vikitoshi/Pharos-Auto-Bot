@@ -697,7 +697,7 @@ const main = async () => {
   const numTransfers = 10; 
   const numWraps = 10; 
   const numSwaps = 10; 
-  const numLPs = 2; 
+  const numLPs = 10; 
 
   while (true) {
     for (const privateKey of privateKeys) {
@@ -716,33 +716,33 @@ const main = async () => {
         logger.error('Skipping user info fetch due to failed check-in');
       }
 
-      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`\n${colors.cyan}------------------------${colors.reset}`);
       console.log(`${colors.cyan}TRANSFERS${colors.reset}`);
-      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`${colors.cyan}------------------------${colors.reset}`);
       for (let i = 0; i < numTransfers; i++) {
         await transferPHRS(wallet, provider, i);
         await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
       }
 
-      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`\n${colors.cyan}------------------------${colors.reset}`);
       console.log(`${colors.cyan}WRAP${colors.reset}`);
-      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`${colors.cyan}------------------------${colors.reset}`);
       for (let i = 0; i < numWraps; i++) {
         await wrapPHRS(wallet, provider, i);
         await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
       }
 
-      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`\n${colors.cyan}------------------------${colors.reset}`);
       console.log(`${colors.cyan}SWAP${colors.reset}`);
-      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`${colors.cyan}------------------------${colors.reset}`);
       for (let i = 0; i < numSwaps; i++) {
         await performSwap(wallet, provider, i);
         await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
       }
 
-      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`\n${colors.cyan}------------------------${colors.reset}`);
       console.log(`${colors.cyan}ADD LP${colors.reset}`);
-      console.log(`${colors.cyan}-----------------------------------------${colors.reset}`);
+      console.log(`${colors.cyan}------------------------${colors.reset}`);
       for (let i = 0; i < numLPs; i++) {
         await addLiquidity(wallet, provider, i);
         await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
