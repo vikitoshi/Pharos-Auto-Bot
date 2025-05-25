@@ -25,6 +25,7 @@
     "dotenv": "^16.4.1",
     "ethers": "^6.11.1",
     "https-proxy-agent": "^7.0.2",
+    "prompt-sync": "^4.2.0",
     "random-useragent": "^0.5.0"
   },
   "engines": {
