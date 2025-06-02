@@ -33,6 +33,11 @@ An automated bot for interacting with the Pharos Testnet, performing swaps, tran
 
 3. Create a `.env` file in the root directory with your private keys:
    ```
+   BASE_URL="https://api.pharosnetwork.xyz"
+   RPC_URL="https://api.zan.top/node/v1/pharos/testnet/1761472bf26745488907477d23719fb5"
+   HAIN_ID=688688
+   EXPLORER_URL="https://testnet.pharosscan.xyz/tx/"
+   
    PRIVATE_KEY_1=your_first_private_key_here
    PRIVATE_KEY_2=your_second_private_key_here
    ```

@@ -34,11 +34,14 @@ const logger = {
   },
 };
 
+// Update networkConfig to ensure chainId is a number
 const networkConfig = {
   name: 'Pharos Testnet',
-  chainId: 688688,
-  rpcUrl: 'https://testnet.dplabs-internal.com',
+  chainId: parseInt(process.env.CHAIN_ID || '688688', 10), // Convert to number
+  rpcUrl: process.env.RPC_URL || 'https://api.zan.top/node/v1/pharos/testnet/1761472bf26745488907477d23719fb5',
   currencySymbol: 'PHRS',
+  baseUrl: process.env.BASE_URL || 'https://api.pharosnetwork.xyz',
+  explorerUrl: process.env.EXPLORER_URL || 'https://testnet.pharosscan.xyz/tx/'
 };
 
 const tokens = {
@@ -148,13 +151,24 @@ const getRandomProxy = (proxies) => {
   return proxies[Math.floor(Math.random() * proxies.length)];
 };
 
+// Update setupProvider function
 const setupProvider = (proxy = null) => {
+  const providerConfig = {
+    chainId: networkConfig.chainId,
+    name: networkConfig.name,
+    timeout: 30000,
+    staticNetwork: true,
+    batchMaxCount: 1,
+    polling: true,
+    pollingInterval: 1000,
+  };
+
   if (proxy) {
     logger.info(`Using proxy: ${proxy}`);
     const agent = new HttpsProxyAgent(proxy);
     return new ethers.JsonRpcProvider(networkConfig.rpcUrl, {
       chainId: networkConfig.chainId,
-      name: networkConfig.name,
+      name: networkConfig.name
     }, {
       fetchOptions: { agent },
       headers: { 'User-Agent': randomUseragent.getRandom() },
@@ -163,16 +177,16 @@ const setupProvider = (proxy = null) => {
     logger.info('Using direct mode (no proxy)');
     return new ethers.JsonRpcProvider(networkConfig.rpcUrl, {
       chainId: networkConfig.chainId,
-      name: networkConfig.name,
+      name: networkConfig.name
     });
   }
 };
 
-const waitForTransactionWithRetry = async (provider, txHash, maxRetries = 5, baseDelayMs = 1000) => {
+const waitForTransactionWithRetry = async (provider, txHash, maxRetries = 5, baseDelayMs = 2000) => {
   let retries = 0;
   while (retries < maxRetries) {
     try {
-      const receipt = await provider.getTransactionReceipt(txHash);
+      const receipt = await provider.waitForTransaction(txHash, 1, 30000); // 30 second timeout
       if (receipt) {
         return receipt;
       }
@@ -181,8 +195,8 @@ const waitForTransactionWithRetry = async (provider, txHash, maxRetries = 5, bas
       retries++;
     } catch (error) {
       logger.error(`Error fetching transaction receipt for ${txHash}: ${error.message}`);
-      if (error.code === -32008) {
-        logger.warn(`RPC error -32008, retrying (${retries + 1}/${maxRetries})...`);
+      if (error.code === -32008 || error.code === 'TIMEOUT') {
+        logger.warn(`Network error, retrying (${retries + 1}/${maxRetries})...`);
         await new Promise(resolve => setTimeout(resolve, baseDelayMs * Math.pow(2, retries)));
         retries++;
       } else {
@@ -234,7 +248,7 @@ const checkBalanceAndApproval = async (wallet, tokenAddress, amount, decimals, s
 const getUserInfo = async (wallet, proxy = null, jwt) => {
   try {
     logger.user(`Fetching user info for wallet: ${wallet.address}`);
-    const profileUrl = `https://api.pharosnetwork.xyz/user/profile?address=${wallet.address}`;
+    const profileUrl = `${networkConfig.baseUrl}/user/profile?address=${wallet.address}`;
     const headers = {
       accept: "application/json, text/plain, */*",
       "accept-language": "en-US,en;q=0.8",
@@ -276,50 +290,63 @@ const getUserInfo = async (wallet, proxy = null, jwt) => {
   }
 };
 
-const verifyTask = async (wallet, proxy, jwt, txHash) => {
-  try {
-    logger.step(`Verifying task ID 103 for transaction: ${txHash}`);
-    const verifyUrl = `https://api.pharosnetwork.xyz/task/verify?address=${wallet.address}&task_id=103&tx_hash=${txHash}`;
-    
-    const headers = {
-      accept: "application/json, text/plain, */*",
-      "accept-language": "en-US,en;q=0.8",
-      authorization: `Bearer ${jwt}`,
-      priority: "u=1, i",
-      "sec-ch-ua": '"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"Windows"',
-      "sec-fetch-dest": "empty",
-      "sec-fetch-mode": "cors",
-      "sec-fetch-site": "same-site",
-      "sec-gpc": "1",
-      Referer: "https://testnet.pharosnetwork.xyz/",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
-      "User-Agent": randomUseragent.getRandom(),
-    };
+const verifyTask = async (wallet, proxy, jwt, txHash, maxRetries = 3) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      logger.step(`Verifying task ID 103 for transaction: ${txHash} (Attempt ${attempt}/${maxRetries})`);
+      const verifyUrl = `https://api.pharosnetwork.xyz/task/verify?address=${wallet.address}&task_id=103&tx_hash=${txHash}`;
+      
+      const headers = {
+        accept: "application/json, text/plain, */*",
+        "accept-language": "en-US,en;q=0.8",
+        authorization: `Bearer ${jwt}`,
+        priority: "u=1, i",
+        "sec-ch-ua": '"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-site",
+        "sec-gpc": "1",
+        Referer: "https://testnet.pharosnetwork.xyz/",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "User-Agent": randomUseragent.getRandom(),
+        timeout: 30000, // 30 second timeout
+      };
 
-    const axiosConfig = {
-      method: 'post',
-      url: verifyUrl,
-      headers,
-      httpsAgent: proxy ? new HttpsProxyAgent(proxy) : null,
-    };
+      const axiosConfig = {
+        method: 'post',
+        url: verifyUrl,
+        headers,
+        httpsAgent: proxy ? new HttpsProxyAgent(proxy) : null,
+        timeout: 30000,
+      };
 
-    logger.loading('Sending task verification request...');
-    const response = await axios(axiosConfig);
-    const data = response.data;
+      logger.loading('Sending task verification request...');
+      const response = await axios(axiosConfig);
+      const data = response.data;
 
-    if (data.code === 0 && data.data.verified) {
-      logger.success(`Task ID 103 verified successfully for ${txHash}`);
-      return true;
-    } else {
-      logger.warn(`Task verification failed: ${data.msg || 'Unknown error'}`);
+      if (data.code === 0 && data.data.verified) {
+        logger.success(`Task ID 103 verified successfully for ${txHash}`);
+        return true;
+      } else {
+        logger.warn(`Task verification failed: ${data.msg || 'Unknown error'}`);
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
+          continue;
+        }
+        return false;
+      }
+    } catch (error) {
+      logger.error(`Task verification attempt ${attempt} failed for ${txHash}: ${error.message}`);
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        continue;
+      }
       return false;
     }
-  } catch (error) {
-    logger.error(`Task verification failed for ${txHash}: ${error.message}`);
-    return false;
   }
+  return false;
 };
 
 const getMulticallData = (pair, amount, walletAddress) => {
@@ -405,7 +432,7 @@ const performSwap = async (wallet, provider, index, jwt, proxy) => {
     logger.loading(`Swap transaction ${index + 1} sent, waiting for confirmation...`);
     const receipt = await waitForTransactionWithRetry(provider, tx.hash);
     logger.success(`Swap ${index + 1} completed: ${receipt.hash}`);
-    logger.step(`Explorer: https://testnet.pharosscan.xyz/tx/${receipt.hash}`);
+    logger.step(`Explorer: ${networkConfig.explorerUrl}${receipt.hash}`);
 
     await verifyTask(wallet, proxy, jwt, receipt.hash);
   } catch (error) {
@@ -434,13 +461,18 @@ const transferPHRS = async (wallet, provider, index, jwt, proxy) => {
       return;
     }
 
+    // Get the current nonce for the wallet
+    const nonce = await provider.getTransactionCount(wallet.address, 'latest');
+    
     const feeData = await provider.getFeeData();
     const gasPrice = feeData.gasPrice || ethers.parseUnits('1', 'gwei');
+    
     const tx = await wallet.sendTransaction({
       to: toAddress,
       value: required,
       gasLimit: 21000,
       gasPrice,
+      nonce: nonce, // Add explicit nonce
       maxFeePerGas: feeData.maxFeePerGas || undefined,
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || undefined,
     });
@@ -448,7 +480,10 @@ const transferPHRS = async (wallet, provider, index, jwt, proxy) => {
     logger.loading(`Transfer transaction ${index + 1} sent, waiting for confirmation...`);
     const receipt = await waitForTransactionWithRetry(provider, tx.hash);
     logger.success(`Transfer ${index + 1} completed: ${receipt.hash}`);
-    logger.step(`Explorer: https://testnet.pharosscan.xyz/tx/${receipt.hash}`);
+    logger.step(`Explorer: ${networkConfig.explorerUrl}${receipt.hash}`);
+
+    // Add delay between transactions
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     await verifyTask(wallet, proxy, jwt, receipt.hash);
   } catch (error) {
@@ -459,6 +494,8 @@ const transferPHRS = async (wallet, provider, index, jwt, proxy) => {
     if (error.receipt) {
       logger.error(`Receipt: ${JSON.stringify(error.receipt, null, 2)}`);
     }
+    // Add delay after error before next transaction
+    await new Promise(resolve => setTimeout(resolve, 5000));
   }
 };
 
@@ -753,6 +790,26 @@ const addLiquidity = async (wallet, provider, index, jwt, proxy) => {
   }
 };
 
+const loadPrivateKeys = () => {
+  const privateKeys = [];
+  let index = 1;
+  
+  while (true) {
+    const key = process.env[`PRIVATE_KEY_${index}`];
+    if (!key) break;
+    privateKeys.push(key);
+    index++;
+  }
+
+  if (privateKeys.length === 0) {
+    logger.error('No private keys found in .env file');
+    process.exit(1);
+  }
+
+  logger.info(`Loaded ${privateKeys.length} wallet(s)`);
+  return privateKeys;
+};
+
 const getUserDelay = () => {
   let delayMinutes = process.env.DELAY_MINUTES;
   if (!delayMinutes) {
@@ -786,17 +843,15 @@ const main = async () => {
   logger.info(`Delay between cycles set to ${delayMinutes} minutes`);
 
   const proxies = loadProxies();
-  const privateKeys = [process.env.PRIVATE_KEY_1, process.env.PRIVATE_KEY_2].filter(pk => pk);
-  if (!privateKeys.length) {
-    logger.error('No private keys found in .env');
-    return;
-  }
+  const privateKeys = loadPrivateKeys();
 
   const numTransfers = 10;
   const numWraps = 10;
   const numSwaps = 10;
   const numLPs = 10;
 
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  
   while (true) {
     for (const privateKey of privateKeys) {
       const proxy = proxies.length ? getRandomProxy(proxies) : null;
@@ -819,34 +874,42 @@ const main = async () => {
       console.log(`${colors.cyan}------------------------${colors.reset}`);
       for (let i = 0; i < numTransfers; i++) {
         await transferPHRS(wallet, provider, i, jwt, proxy);
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+        // Increased delay between transfers
+        await delay(Math.random() * 8000 + 5000); // 5-13 second random delay
       }
-
+      
+      // Increased delay between operation types
+      await delay(15000); // 15 seconds between operation types
+      
       console.log(`\n${colors.cyan}------------------------${colors.reset}`);
       console.log(`${colors.cyan}WRAP${colors.reset}`);
       console.log(`${colors.cyan}------------------------${colors.reset}`);
       for (let i = 0; i < numWraps; i++) {
         await wrapPHRS(wallet, provider, i, jwt, proxy);
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+        await delay(Math.random() * 5000 + 3000);
       }
 
+      await delay(10000); // 10 seconds between operation types
+      
       console.log(`\n${colors.cyan}------------------------${colors.reset}`);
       console.log(`${colors.cyan}SWAP${colors.reset}`);
       console.log(`${colors.cyan}------------------------${colors.reset}`);
       for (let i = 0; i < numSwaps; i++) {
         await performSwap(wallet, provider, i, jwt, proxy);
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+        await delay(Math.random() * 5000 + 3000);
       }
 
+      await delay(10000); // 10 seconds between operation types
+      
       console.log(`\n${colors.cyan}------------------------${colors.reset}`);
       console.log(`${colors.cyan}ADD LP${colors.reset}`);
       console.log(`${colors.cyan}------------------------${colors.reset}`);
       for (let i = 0; i < numLPs; i++) {
         await addLiquidity(wallet, provider, i, jwt, proxy);
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+        await delay(Math.random() * 5000 + 3000);
       }
     }
-
+    
     logger.success('All actions completed for all wallets!');
     await countdown(delayMinutes);
   }
